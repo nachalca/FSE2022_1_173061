@@ -1,0 +1,102 @@
+---
+title: "Selección y validación modelos CMIP6 para Uruguay"
+subtitle: "Informe técnico -  Fondo sectorial de energía 173061"
+format: pdf
+editor: visual
+number-sections: true
+bibliography: ../../references/referencias.bib
+csl: ../../references/apa.csl
+link-citations: true
+---
+
+# Introducción
+
+El Proyecto de Intercomparación de Modelos Acoplados Fase 6 (CMIP6) representa el último esfuerzo colaborativo entre la comunidad global de modelado climático para mejorar nuestra comprensión de los cambios climáticos pasados, presentes y futuros. Los modelos CMIP6 incorporan avances en ciencia climática, simulaciones de mayor resolución y representaciones más comprehensivas de los ciclos biogeoquímicos y procesos atmosféricos en comparación con sus predecesores. Estos modelos proporcionan un rango de proyecciones climáticas basadas en diferentes escenarios socioeconómicos, ayudando a evaluar los impactos potenciales de diversas trayectorias de concentración de gases de efecto invernadero. CMIP6 se construye sobre fases previas al incluir nuevos experimentos diseñados para abordar preguntas científicas específicas, tales como el rol de las nubes y aerosoles, la dinámica de las capas de hielo y los mecanismos de retroalimentación dentro del sistema terrestre. 
+
+Este conjunto comprehensivo de modelos y experimentos ofrece un marco robusto para evaluar los resultados potenciales del cambio climático e informar la política climática global y regional. Los modelos climáticos (por ejemplo, CMIP6) típicamente producen resultados a resoluciones temporales gruesas debido a restricciones computacionales, mientras que los datos observacionales o específicos de aplicaciones frecuentemente requieren detalles temporales más finos.
+
+El objetivo de este informe es validar brevemente las series temporales de los modelos CMIP6 seleccionados para el proyecto. Se presenta una mínima revisión de la literatura reciente sobre el uso de modelos CMIP6 en Sudamérica y Uruguay, seguida de una descripción de los modelos seleccionados en el proyecto y una validación inicial de las series temporales extraídas de los modelos CMIP6 para Uruguay.
+
+# CMIP6 en Suramérica 
+
+Durante los últimos años, varios estudios han evaluado la capacidad de los modelos CMIP6 para reproducir las condiciones climáticas observadas en diversas regiones de Sudamérica, incluyendo áreas cercanas a Uruguay. Estos estudios proporcionan un contexto valioso para entender las fortalezas y limitaciones de los modelos climáticos en la región. Este tipo de comparaciones es compleja y depende de múltiples factores, tales como la variable climática analizada, la escala espacial y temporal, las subregiones de interés y las métricas estadísticas empleadas. A continuación, se resumen algunos estudios relevantes
+
+Las variables de temperatura y precipitación son las más comúnmente evaluadas en estos estudios debido a su importancia climática y disponibilidad de datos observacionales. Trabjando en una escala temporal mensual, buena performance general es observada para la región de la cuenca de La Plata [@Firpo2022]. También se reportan correlaciones modedaradas a altas en la región Sur-este (SES) cuando se comparan los datos de CMIP6 con ERA5 [@Bazzanela2023]. En @Bazzanela2023 proponen utilizar un conjunto de 7 modelos CMIP6 para representar la región SES y mejorar la habilidad de simulación climática. En tanto, @Reboita_2024 elaboran un ranking de modelos CMIP6 basado en varias métricas estadísticas para distintas regiones de Sur América. Otros estudios se han enfocado en regiones específicas, tales como el Centro-Oeste de Argentina [@Marianetti2024], o en aspectos particulares del clima, como los valores extremos [@Marianetti2024] o índices de circulación atmosférica [@Arias2025]. 
+
+Recientemente, iniciativas regionales más amplias, tales como el estudio piloto insignia CORDEX para Sudamérica subtropical, enfatizan el rol futuro de la reducción de escala basada en aprendizaje automático a resoluciones muy altas [@CORDEX2023]. Aunque este proyecto aún está en desarrollo un primer producto se puede encontrar recientemente en @Bettolli2025, donde se aplican modelos de redes neuronales convolucionales para obtener reducción de escala a gran resolución para modelado hidrológico de la región SES. Los resultados indican gran performance para la reproducción de patrones de precipitaciones diarias.
+
+Estas observaciones resaltan una brecha crítica que el presente estudio busca abordar al aplicar técnicas avanzadas de aprendizaje automático para reducir estadísticamente la escala de las proyecciones CMIP6 para Uruguay. 
+  
+# CMIP6 en Uruguay
+En Uruguay, los trabajos con CMIP6 son más escasos. @Barreiro2021_4 utilizan varios modelos de CMIP6 para describir las principales características climáticas de Uruguay en las variables de temperatura, precipitaciones y vientos, así como su proyección durante el siglo XXI bajo diferentes escenarios de emisiones. @Barreiro2021_2 utilizan con un subconjunto de modelos CMIP6 las principales tendencias y variabilidad de los vientos. Lo que es más relevante para este proyecto es que el subconjunto de modelos corresponde a modelos ya validados para el clima de Uruguay. 
+
+##  Modelos seleccionados
+El proyecto utiliza datos climáticos de modelos CMIP6 y datos de reanálisis para validar y comparar las simulaciones climáticas en Uruguay. A continuación, se describen los aspectos clave relacionados con los datos utilizados en este estudio.
+
+En primer lugar, se seleccionaron variables climáticas relevantes para el análisis, ya sea para obtener la misma serie en escala reducida o para utilizar como variables predictoras en los modelos de downscaling. Estas variables incluyen principalmente la temperatura superficial del aire (media, mínima y máxima diaria), precipitaciones, velocidad de viento, presión a nivel del mar, cobertura de nubes y radiación solar. 
+
+El segundo punto importante es la selección de los modelos CMIP6. Inicialmente, se consideran los modelos validados para Uruguay descritos en @Barreiro2021_2. Sin embargo, no todos los modelos contenían todas las variables para el peridodo de interés. Se optó por utilizar únicamente los modelos que proporcionan todas las variables necesarias para el análisis. Finalmente, en relación con los escenarios climáticos, se seleccionaron un subconjunto que incluye escenarios de bajas, medias y altas emisiones para capturar una gama representativa de posibles futuros climáticos. Se utilizaron 7 combinaciones de laboratorio y escenarios: EC_EARTH3 (4_3_4), CESM2 (2_4_5, 3_7_0 y 5_8_5), MRI_ESM2 (2_4_5, 3_7_0 y 4_3_4). Para cada modelo se descargaron los datos correspondientes a la región LAT: [-30, -35], LON: [-59, -53] y se promediaron los puntos geográficos para obtener una serie temporal representando todo Uruguay.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| results: asis
+
+# Tabla resumen de modelos CMIP6 seleccionados
+modelos_cmip6 <- data.frame(
+  Laboratorio = c("EC_EARTH3", "CESM2", "CESM2", "CESM2", "MRI_ESM2", "MRI_ESM2", "MRI_ESM2"),
+  Escenario = c("4_3_4", "2_4_5", "3_7_0", "5_8_5", "2_4_5", "3_7_0", "4_3_4")
+)
+
+# usando xtable 
+library(xtable)
+options( xtable.comment = FALSE )
+modelos_cmip6 |> 
+  xtable::xtable(caption = "Modelos seleccionados.\\label{tab1}") |> 
+  print(include.rownames = FALSE, caption.placement = "top")
+```
+
+Los datos de reanálisis utilizados en este estudio provienen de ERA5, que ofrece una alta resolución espacial y temporal, proporcionando una referencia confiable para la validación de los modelos climáticos. 
+
+## Validación 
+
+Si bien la decisión de los modelos se basó en estudios previos y la disponibilidad de todas las variables seleccionadas, se realiza un pequeño ejercicio para validar las series.  El objetivo es evaluar si las series temporales extraídas de los modelos CMIP6 son razonablemente similares a las observaciones/reanálisis de ERA5 en términos de distribución, dependencia temporal y comportamiento en colas.
+
+Es usual comparar las series de modelos climáticos con datos observacionales o de reanálisis utilizando métricas estadísticas clásicas como la media, varianza, correlación y error cuadrático medio. Sin embargo, estas métricas tienen limitaciones, ya que los momentos resumen no capturan completamente las diferencias en la forma de la distribución, especialmente en las colas. Además, las medidas puntuales como la correlación y el error cuadrático medio son más adecuadas para comparaciones punto a punto y no tanto para evaluar si las distribuciones son similares. 
+
+Por lo tanto, se propone un protocolo de validación que combina métricas clásicas con enfoques complementarios para evaluar la similitud entre las series temporales de CMIP6 y ERA5. Este protocolo incluye: una comparación de la distribución acumulada en base a percentiles, un análisis de la estructura de dependencia temporal mediante funciones de autocorrelación, y un estudio del comportamiento en colas utilizando extremogramas. 
+
+La figura \ref{fig:qq} muestra los gráficos de percentiles de las variables climáticas seleccionadas. En estos gráficos, los percentiles de las variables climáticas simuladas por los modelos CMIP6 se comparan con los percentiles correspondientes de ERA5. Cada panel representa una variable diferente, y los colores indican diferentes combinaciones de laboratorio y escenario. Un buen ajuste se reflejaría en puntos que se alinean cerca de la línea diagonal, indicando que las distribuciones de las variables simuladas y observadas son similares. Los resultados sugieren un razonable ajuste de las distribuciones para la mayoría de las variables y modelos, aunque algunos modelos muestran desviaciones notables en ciertas variables, como la velocidad del viento en los modelos MRI. 
+
+\begin{figure}[H]
+\centering
+\includegraphics[clip=4 0 4 0, trim, scale=.7]{qq_cmip6_all.png}
+\caption{Percentiles de variables climáticas en CMIP6 (eje vertical) contra los percentiles de ERA5 (eje horizontal). Cada panel representa una variable de interés, el color representa el laboratorio/escenario.\label{fig:qq}} 
+\end{figure}
+
+La figura \ref{fig:acf} presenta las funciones de autocorrelación (ACF) para las variables climáticas seleccionadas. La ACF mide la correlación entre valores de una serie temporal en diferentes retardos. En estos gráficos, se comparan las ACF de las series temporales simuladas por los modelos CMIP6 con las ACF de ERA5. Cada panel representa una variable diferente, las correlaciones observadas para ERA5 son representadas con barras y las líneas coloreadas indican diferentes combinaciones de laboratorio y escenario. Los resultados indican que la mayoría de los modelos CMIP6 capturan adecuadamente la dependencia temporal observada en ERA5 para la temperatura y precipitación, en el caso de viento los resultados sugieren que varios modelos contienen mayor dependencia de la observada. 
+
+\begin{figure}[H]
+\centering
+\includegraphics[clip=4 0 4 0, trim, scale=.7]{qq_acf_all.png}
+\caption{ \label{fig:acf}} 
+\end{figure}
+
+La figura \ref{fig:ext} muestra los extremogramas para las variables climáticas seleccionadas. Los extremogramas son herramientas que permiten analizar la dependencia en las colas de las distribuciones, es decir, cómo los eventos extremos en una serie temporal están correlacionados a lo largo del tiempo. En estos gráficos, se comparan los extremogramas de las series temporales simuladas por los modelos CMIP6 con los extremogramas de ERA5. Cada panel representa una variable diferente, las correlaciones observadas para ERA5 son representadas con barras y los colores indican diferentes combinaciones de laboratorio y escenario. Los resultados sugieren que la mayoría de los modelos CMIP6 capturan razonablemente bien la dependencia en las colas observada en ERA5, aunque algunas discrepancias pueden observarse en ciertas variables y modelos.
+
+\begin{figure}[H]
+\centering
+\includegraphics[clip=4 0 4 0, trim, scale=.7]{qq_ext_all.png}
+\caption{\label{fig:ext}} 
+\end{figure}
+
+
+# Comentarios finales 
+
+Este informe presenta una validación preliminar de las series temporales extraídas de modelos CMIP6 para Uruguay, comparándolas con datos de reanálisis ERA5. Se emplearon distintos gráficos para evaluar la similitud entre las series, incluyendo comparaciones de percentiles, funciones de autocorrelación y extremogramas. Los resultados sugieren que, en general, los modelos CMIP6 capturan adecuadamente las características estadísticas clave de las variables climáticas seleccionadas, aunque algunas discrepancias son evidentes en ciertos modelos y variables. 
+
+Sin dudas hay mucho espacio para profundizar en la validación de los modelos CMIP6. En particular, puede ser valioso realizar análisis para cada variable climático por separado, esto permitiría evaluar métricas específicas de cada fenómeno y tener un amplio rango de modelos CMIP6 para cada variable. También es de interés comparar no solamente con ERA5 sino con datos observados provenientes de estaciones meteorológicas en Uruguay. Finalmente, otra línea de trabajo relevante es la utilización de modelos regionales desarrollados para Suramérica como los que estan siendo desarrollados en el marco de CORDEX-Sudamérica subtropical [@Bettolli2025]. 
+
+
+# Referencias
