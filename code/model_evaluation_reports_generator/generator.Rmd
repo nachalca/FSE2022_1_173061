@@ -1,0 +1,27 @@
+```{r setup, include=FALSE}
+library(rmarkdown)
+library('here')
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+variables <- list.files("models/")
+
+variables <- variables[!(variables %in% c("hyperparameters", "scalers", "README.md"))]
+#variables <- variables[(variables %in% c("sfcWind"))]
+
+lapply(variables, function(x){
+  print(x)
+  #No idea why for the output file don't use the root folder and use as reference the ocation of the rmd file
+  fname <- paste0("../../reports/model_evaluation/",
+                  x, 
+                  ".html") 
+  
+  rmarkdown::render(input="code/model_evaluation_reports_generator/model_evaluation.Rmd", 
+                    output_file = fname,
+                    output_format = "html_document",
+                    params = list(variable=x),
+                    clean = TRUE) # removes log files
+})
+```

@@ -1,0 +1,435 @@
+---
+title: "`r paste0('Model evaluation for ', params$variable)`"
+header-includes:
+   - \usepackage{bbm}
+params:
+  variable: "sfcWind" #Use pr as default
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(here)
+knitr::opts_knit$set(root.dir = here())
+knitr::opts_chunk$set(echo = F, warning = F)
+```
+
+```{css}
+/* Define a margin before h2 element */
+h2 {
+  margin-top: 3em;
+}
+```
+
+```{r imports, include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(knitr)
+library(gridExtra)
+#Sys.setenv(RETICULATE_PYTHON = "/home/tancre/bin/miniconda3/bin/python")
+library(reticulate)
+use_python("/home/bruno/.miniconda3/envs/FSE_extremos/bin", required = TRUE)
+library(yaml)
+library("extremogram")
+source('code/metrics.R')
+source('code/utils.R')
+```
+
+```{r load_test_data}
+x <- paste0('data/testing/', params$variable, ".csv")
+variable <- read.csv(x)
+
+res <- data.frame(time = variable$time, reanalysis = variable$target)
+
+#Load configuration
+conf <- yaml.load_file("code/conf.yml")
+```
+
+
+```{r predictions, results=F, warning=F, message=F}
+# Use reticulate to import Python modules
+xgb <- import_from_path("XgboostDownscaler", path = paste0(here(), "/code"))
+xgboost_downscaler <- xgb$XgboostDownscaler()
+
+xgboost_predictions <- xgboost_downscaler$predict(
+                           model = paste0(here(), "/models/", params$variable, "/xgboost.pkl"), 
+                           data = paste0(here(), "/data/testing/", params$variable, ".csv"),
+                           variable = params$variable
+                       )
+
+```
+
+```{r xgboost_custom, results=F, warning=F, message=F}
+if(params$variable == "pr"){
+  xgb_custom <- import_from_path("XgboostCustomDownscaler", path = paste0(here(), "/code"))
+  xgb_custom_downscaler <- xgb_custom$XgboostCustomDownscaler()
+  xgb_custom_predictions <- xgb_custom_downscaler$predict(
+                                model = paste0(here(), "/models/", params$variable, "/xgboost_custom.pkl"), 
+                                data = paste0(here(), "/data/testing/", params$variable, ".csv"),
+                                variable = params$variable
+                            )
+}
+```
+
+```{r cnn_predictions, results=F, warning=F, message=F}
+# Use reticulate to import Python modules
+cnn <- import_from_path("CNNDownscaler", path = paste0(here(), "/code"))
+cnn_downscaler <- cnn$CNNDownscaler()
+
+cnn_predictions <- cnn_downscaler$predict(
+                           model = paste0(here(), "/models/", params$variable, "/cnn.pkl"), 
+                           data = paste0(here(), "/data/testing/", params$variable, ".csv"),
+                           variable_name = params$variable
+                          )
+```
+
+```{r naive_predictions, results=F, warning=F, message=F}
+# Use reticulate to import Python modules
+nv <- import_from_path("NaiveDownscaler", path = paste0(here(), "/code"))
+nv_downscaler <- nv$NaiveDownscaler()
+
+nv_predictions <- nv_downscaler$predict(model = paste0(here(), "/models/", params$variable, "/naive.pkl"), 
+                           data = paste0(here(), "/data/testing/", params$variable, ".csv"),
+                           variable = params$variable)
+```
+
+```{r lstm_predictions, results=F, warning=F, message=F}
+# Use reticulate to import Python modules
+lstm <- import_from_path("LSTMDownscaler", path = paste0(here(), "/code"))
+lstm_downscaler <- lstm$LSTMDownscaler()
+
+lstm_predictions <- lstm_downscaler$predict(model = paste0(here(), "/models/", params$variable, "/lstm.pkl"), 
+                           data = paste0(here(), "/data/testing/", params$variable, ".csv"),
+                           variable_name = params$variable)
+```
+
+```{r res_dataframe, results=F}
+if(params$variable == "pr"){
+  res <- res |> 
+  inner_join(xgboost_predictions, by = join_by(time)) |>
+  inner_join(cnn_predictions, by = join_by(time)) |>
+  inner_join(nv_predictions, by = join_by(time)) |>
+  inner_join(lstm_predictions, by = join_by(time)) |>
+  inner_join(xgb_custom_predictions, by = join_by(time))
+} else {
+  res <- res |> 
+    inner_join(xgboost_predictions, by = join_by(time)) |>
+    inner_join(cnn_predictions, by = join_by(time)) |>
+    inner_join(nv_predictions, by = join_by(time)) |>
+    inner_join(lstm_predictions, by = join_by(time))
+}
+
+write_csv(res, paste0("data/model_evaluation_data/",params$variable,".csv"))
+```
+
+The observations for the validation were taken from `r min(res$time)` to `r max(res$time)`.
+
+Remember that we have on a daily scale the variables `sfcWind`, `tas`, `pr`, `tasmax`, `tasmin` and `psl` and in a monthly scale `clt`, `rsdt`,`rsds` as a predictors. We also have the month `r  if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {", hour, sun's elevation & azimuth"}` and the daily daylight amount in seconds as a predictors too.
+
+```{r metrics_paired}
+models <- res |> select(-c("time", "reanalysis")) |> colnames()
+
+if(conf[["VARIABLES"]][[params$variable]][["daily"]]){
+  if(params$variable == "pr"){
+    r <- lapply(models, function(x) {
+      metrics_paired_hourly_rain(time = res$time, truth = res$reanalysis, estimate = res[[x]], model = x)
+    })    
+  } else {
+    r <- lapply(models, function(x) {
+      metrics_paired_hourly(time = res$time, truth = res$reanalysis, estimate = res[[x]], model = x)
+    })    
+  }
+} else {
+  r <- lapply(models, function(x) {
+    metrics_paired_daily(time = res$time, truth = res$reanalysis, estimate = res[[x]], model = x)
+  })  
+}
+
+results <- do.call(rbind, r)
+
+results <- results |>
+  mutate(across(where(is.numeric), round, digits = 3)) 
+
+kable(results)
+```
+
+```{asis, echo=conf[["VARIABLES"]][[params$variable]][["daily"]]}
+### Amplitude MAE 
+
+$$
+ \frac{\sum_{d=1}^D |A_d - \hat{A}_d|}{D}
+$$
+
+**Where**
+
+  * $D$ Number of days.
+  * $A_d$: is the amplitude of day d, defined as the difference between the highest and lowest temperatures of that day.
+  * $\hat{A}_d$: Estimated amplitude of day d.
+  
+### Maximum error
+
+$$
+\frac{\sum_{d=1}^D |{mh}_d - \hat{mh}_d|}{D}
+$$
+
+**Where**
+
+  * $D$: Number of days.
+  * $mh_d$: is the actual hour of the day when the peak occurred on day $d$.
+  * $\hat{mh}_d$: is the estimated hour of the day when the peak occurred on day $d$.
+
+Lower values are better.
+
+### Sign correlation
+
+$$
+\frac{\sum^{N}_{n=1}1_{sg(X_{n+1} - X_{n}) = sg(\hat{X}_{n+1} - \hat{X}_{n}))}}{N-1}
+$$
+
+**Where**
+
+  * $N$: number of observations
+  * $sg$: is the sign function
+  * $X_n,X_n+1$: are the actual values of observation $n$ and $n+1$.
+  * $\hat{X}_n, \hat{X}_{n+1}$: are the estimated values for observation $n$ and $n+1$.
+  
+The function $\mathbb{1}{sg(X{n+1} - X_{n}) = sg(\hat{X}{n+1} - \hat{X}{n})}$ is an indicator function that equals 1 when the direction of change in the actual series matches the direction of change in the estimated series (i.e., if the actual series increases, the estimated series also increases, or if the actual series decreases, the estimated series also decreases), and equals 0 otherwise.
+
+The possible values of this indicator range between 0 (meaning that whenever the actual series increases, the estimated series decreases, or vice versa) and 1 (meaning that the estimated series always follows the same direction as the actual series). Higher values are preferable.
+
+### Extreme correlation
+
+$$
+\sum_{d | d \in D*} \frac{\mathbb{1}_{E_d=\hat{E}_d}}{|D*|}
+$$
+
+**Where**
+
+  * $D*$: Days that have an extreme value.
+  * $E_d$: A binary indicator for whether day d has an extreme value (1 if it does, 0 otherwise) in the observed data.
+  * $\hat{E}_d$: A binary indicator for whether day d is predicted to have an extreme value (1 if it does, 0 otherwise) based on the model.
+
+The function $\mathbb{1}_{E_d=\hat{E}_d}}$ is an indicator function that equals 1 when both of the days have and extreme value and 0 when one has an extreme value but the other does not.
+
+The possible values of this indicator range between 0 (the days with extremes in the actual serie and the estimated serie never match) and 1 (the days with extremes always match). Higher values are preferable.
+```
+
+## Time series of the first days
+
+```{r show_plot, echo=FALSE}
+res_to_plot <- res[0:72,] 
+
+series_plot <- function(data, col) {
+  time  <- data$time
+  reanalysis <- data$reanalysis
+  column <- data[[col]]
+  
+  p <- data.frame(time =  as.POSIXct(time), #To plot the time as the x-axis 
+                  reanalysis = reanalysis, 
+                  column = column)
+
+  ggplot(p, aes(x=time)) +
+    geom_line(aes(y=reanalysis)) +
+    geom_line(aes(y=column), color = "red") + 
+    labs(y = params$variable, x = "", title = col)
+}
+
+# Serie to compare to reanalysis
+models <- res |> select(-c("time", "reanalysis")) |> colnames()
+
+# Generate Q-Q plots
+plots <- lapply(models, function(col) series_plot(res_to_plot, col))
+
+# Arrange the plots using gridExtra
+do.call(grid.arrange, c(plots, ncol = 1))
+```
+
+`r  if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {"### Hourly distribution\n"}`
+
+```{r, fig.height=9, fig.width=8}
+if (conf[["VARIABLES"]][[params$variable]][["daily"]]){
+  hourly_distribution(res)
+}
+```
+
+`r  if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {"## How Often Peaks Hit Hourly\n"} else {"## Distribution of daily values by month\n"}`
+
+```{r maximum, fig.height=9, fig.width=9}
+if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {
+  models <- res |> select(-c("time", "reanalysis")) |> colnames()
+  
+  plots <- lapply(models, function(col) {
+    maximum_histograms(res$time, res$reanalysis, res[[col]]) + scale_fill_discrete(labels = c(col, "reanalysis"))
+  })
+  
+  do.call(grid.arrange, c(plots, ncol = 1))
+} else {
+  res_to_plot <- res |>
+      pivot_longer(cols = -c(time), names_to = "model", values_to = "value") |>
+      monthly_boxplot_2()
+}
+```
+
+`r  if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {"### Daily amplitude\n"}`
+
+```{r, fig.height=9, fig.width=8}
+if (conf[["VARIABLES"]][[params$variable]][["daily"]]){
+  amplitude_plot(res)
+}
+```
+
+<!-- `r  if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {"### New plot\n"}` -->
+
+<!-- ```{r, fig.height=9, fig.width=6} -->
+<!-- if (conf[["VARIABLES"]][[params$variable]][["daily"]]){ -->
+<!--   res_to_plot <- res |>  -->
+<!--       mutate(date = getDate(time)) |>  -->
+<!--       group_by(date) |> -->
+<!--       mutate(daily_avg = mean(reanalysis)) |> -->
+<!--       ungroup() |> -->
+<!--       mutate(hour = getHour(time)) -->
+
+<!--   p1 <- ggplot(res_to_plot, aes(x=daily_avg, y=reanalysis)) + -->
+<!--     geom_line() + -->
+<!--     labs(title = "Reanalysis") + -->
+<!--     facet_wrap(~hour) -->
+
+<!--   p2 <- ggplot(res_to_plot, aes(x=daily_avg, y=xgboost)) + -->
+<!--     geom_line() + -->
+<!--     labs(title = "Xgboost") + -->
+<!--     facet_wrap(~hour) -->
+<!--   grid.arrange(p1, p2, newpage = T) -->
+<!-- } -->
+<!-- ``` -->
+
+## QQ Plot
+
+```{r qqplot, fig.height=8, fig.width=6}
+# Function to create a Q-Q plot comparing quantiles of a sample column against a reference column
+qq_plot_against <- function(data, sample_col) {
+  ref_col <- "reanalysis"
+  sample_data <- data[[sample_col]]
+  ref_data <- data[[ref_col]]
+  
+  # Sort the data
+  sample_data_sorted <- sort(sample_data)
+  ref_data_sorted <- sort(ref_data)
+  
+  # Calculate quantiles
+  n <- min(length(sample_data_sorted), length(ref_data_sorted))
+  quantiles_sample <- sample_data_sorted[seq(1, length(sample_data_sorted), length.out = n)]
+  quantiles_ref <- ref_data_sorted[seq(1, length(ref_data_sorted), length.out = n)]
+  
+  # Create a data frame for plotting
+  quantile_df <- data.frame(Quantiles_Ref = quantiles_ref, Quantiles_Sample = quantiles_sample)
+  
+  # Generate the Q-Q plot
+  ggplot(quantile_df, aes(x = Quantiles_Ref, y = Quantiles_Sample)) +
+    geom_point() +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    ggtitle(paste(sample_col)) +
+    labs(x = NULL, y = NULL) +
+    theme_minimal()
+}
+
+# Columns to compare against the reference column
+models <- res |> select(-c("time", "reanalysis")) |> colnames()
+# Generate Q-Q plots
+plots <- lapply(models, function(col) qq_plot_against(res, col))
+
+# Arrange the plots using gridExtra
+do.call(grid.arrange, c(plots, ncol = 2))  # Arrange in a grid
+```
+
+## Distribution of the undownscaled value on days with estimated extremes values.
+
+*On the x-axis we have the daily mean (standardized). It says `Undownscaled value`, but is the daily mean after the downscaling. A good idea is to plot the original undownscaled value.*
+
+The purpose of this plot is to illustrate the distribution of P(undownscaled value | we predicted an extreme). This is useful because it reveals how much information we can recover concerning extreme events. If the distribution is skewed to the right, it suggests that we're predicting extreme values only when extreme values have already occurred. Conversely, if the lower tail of the distribution resembles the reanalysis data, it indicates that we can capture short-duration extremes (e.g., brief periods of heavy rainfall, such as an intense downpour lasting an hour before stopping).
+
+```{r extremes}
+mean_on_coarse_res_with_extremes_plot(res, daily = conf[["VARIABLES"]][[params$variable]][["daily"]], standarize=T)
+```
+
+## Autocorrelogram
+
+```{r acf}
+models <- res |> select(-c("time")) |> colnames()
+
+r <- lapply(models, function(x) {
+  acf(res[[x]], lag.max = 47, plot = F)$acf
+})
+
+results <- do.call(cbind, r)
+
+colnames(results) <- models
+
+results <- as_data_frame(results)
+
+results <- results |> pivot_longer(cols = everything(), names_to = "model", values_to = "acf")
+results$lag <- sort(rep(1:48, length(models)))
+
+results <- results |> filter(lag > 1) #I don't want to plot the first lag
+
+ggplot(results, mapping = aes(x = lag, y = acf)) +
+    geom_segment(mapping = aes(xend = lag, yend = 0)) +
+    facet_wrap(~ model, nrow = 2) 
+```
+
+## Extremogram
+
+*Important:* Right now we are only estimating the upper tail extremogram. Currently we didn't find a way to estimate the two tales at the same time. We are using `quant = .97`
+
+```{r extremogram}
+models <- res |> select(-c("time")) |> colnames()
+
+r <- lapply(models, function(x) {
+  extremogram1(res[[x]], 
+               quant = .97, maxlag = 48, type = 1, ploting = 0)
+})
+
+results <- do.call(cbind, r)
+
+colnames(results) <- models
+
+results <- as_data_frame(results)
+
+results <- results |> pivot_longer(cols = everything(), names_to = "model", values_to = "extremogram")
+results$lag <- sort(rep(1:48, length(models)))
+
+results <- results |> filter(lag > 1) #I don't want to plot the first lag
+
+ggplot(results, mapping = aes(x = lag, y = extremogram)) +
+    geom_segment(mapping = aes(xend = lag, yend = 0)) +
+    facet_wrap(~ model, nrow = 2)
+```
+
+## Model Explanation
+
+### XGBoost
+
+```{r xgboost_load_model}
+# Use reticulate to import Python modules
+pickle <- import("pickle")
+builtins <- import_builtins()  # This imports Python's built-in functions, including 'open'
+
+x <- paste0('models/', params$variable, "/xgboost.pkl")
+
+# Load the model from the pickle file
+with(builtins$open(x, "rb") %as% f, {
+  xgboost <- pickle$load(f)
+})
+```
+
+```{r xgboost_explanation}
+importance <- data.frame(features = unlist(xgboost$feature_names_in_), importance = unlist(xgboost$feature_importances_)) |>
+                arrange(desc(importance)) |> head(10)
+# Create a ggplot2-based variable importance plot
+ggplot(importance, aes(x = importance, y = reorder(features, importance))) +
+  geom_bar(stat = "identity", fill = "dodgerblue") +
+  labs(
+    title = "Variable Importance",
+    x = "Importance",
+    y = "Feature"
+  ) +
+  theme_minimal()
+```

@@ -1,0 +1,208 @@
+```{css}
+h4 {
+  margin-top: 3em;
+  font-size: 18pt;
+}
+```
+
+```{r}
+colnames(res_validation_wide) <- sapply(strsplit(colnames(res_validation_wide), "\\."), `[`, 1)
+colnames(res_validation_wide)[colnames(res_validation_wide) == "nv"] <- "naive"
+```
+
+#### Numerical evaluation metrics
+
+- Each row correspond an evaluation metric
+- Dark blue cell indicates the best model in the row. 
+- Light blue cell indicates the second best model in the row.
+
+```{r}
+models <- res_validation_wide |> select(-c("time", "reanalysis", starts_with('undownscaled'))) |> colnames()
+
+r <- lapply(models, function(x) {
+    if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {
+      if(params$variable == 'pr'){
+        metrics_unpaired_hourly_rain(time = res_validation_wide$time, 
+                                truth = res_validation_wide$reanalysis, 
+                                estimate = res_validation_wide[[x]], 
+                                model = x)
+      }else{
+        metrics_unpaired_hourly(time = res_validation_wide$time, 
+                                truth = res_validation_wide$reanalysis, 
+                                estimate = res_validation_wide[[x]], 
+                                model = x)        
+      }
+    } else {
+      metrics_unpaired_daily(time = res_validation_wide$time, 
+                             truth = res_validation_wide$reanalysis, 
+                             estimate = res_validation_wide[[x]], model = x)
+    }
+})
+
+results <- do.call(rbind, r) |> 
+  arrange(abs(diff_of_means))
+ # mutate(across(where(is.numeric), \(x) round(x, digits = 3) ) )
+
+res.tabla <-  data.frame(Metric = names(results), t(results)) |> 
+  mutate( sce = gsub('\\.', '_', res)) |> 
+  remove_rownames()
+
+# save numeric results 
+# write.csv(res.tabla, 
+#   paste0("reports/ds_acp/",params$variable,'_',gsub('\\.', '_', res), ".csv"), 
+#   row.names = FALSE)  
+#------------------------
+
+# vector indicating if the metric is an error(-1), a gof (1), or a ratio (0)
+metr.dir <- rep(1, length(names(results)) )
+metr.dir[grep('mae|diff|ks', names(results))] <- -1
+metr.dir[grep('ratio', names(results)) ] <- 0
+
+data.frame(Metric = names(results), t(results)) |> 
+  mutate( dr = metr.dir ) |>  # error direction
+  as_tibble() |>  
+  gt(  ) |>
+  fmt_number(
+    columns = everything(),
+    decimals = 2
+  ) |> 
+  data_color(
+    columns = -Metric, 
+    method = 'numeric',
+    direction = 'row',
+    fn = fncol) |> 
+      cols_hide(dr)
+
+
+
+# res.tabla |>   as_tibble() |> 
+#   select(-sce) |> 
+#   gt() |> 
+#   data_color(
+#     columns = -c(Metric),
+#     method = 'numeric',
+#     direction = 'row',
+#     palette = 'Blues', 
+#     reverse=TRUE)
+```
+
+#### Time series of the first few days
+
+```{r, echo=FALSE}
+days <- n_distinct(res_validation_long$model)*n_distinct(res_validation_long$experiment)*24*5
+res_to_plot <- res_validation_long[0:days,]
+
+
+series_plot_ds(res_to_plot)
+rm(res_validation_long)
+
+######################################
+# Figure of Temperature for final report 
+# pp <- series_plot_ds(res_to_plot)
+# built <- ggplot_build(pp)
+# brk <- built$layout$panel_params[[1]]$x$breaks[2:4]
+# pp + 
+#   labs(x='', y = 'temperatura') + 
+#   scale_y_continuous(
+#     labels = function(x) round(x - 273.15),
+#     name = "Temperatura"
+#   ) +
+#   scale_x_continuous(breaks = brk, 
+#     labels = paste('Dia', c(3,5,7)) )
+# ggsave(filename = 'reports/informes_aniiserie_ds_dias.png',  height = 6, width = 8)
+######################################
+
+```
+
+
+
+
+#### Graphical evaluation metrics
+
+<!-- *Important:* Right now we are only estimating the upper tail extremogram. Currently we didn't find a way to estimate the two tales at the same time. We are using `quant = .97` -->
+
+- **Observations**: cumulative distribution (Detrended QQ), dependency structure (ACF), and extremes (Extremogram, using 0.97 cut off).
+
+- **Daily/Monthly gruped**: Maximum hour histogram (only in daily variables), Amplitude distribution. 
+
+- **Hourly/Daily grouped**: Mean profile per hour within days (or weeks witihin season)
+
+- In all plots, grey color represent the true ERA5 signal. 
+<br>
+
+```{r}
+plqq <- detrend_qq_ds(res_validation_wide)
+```
+
+
+```{r}
+if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {
+  # res.mx <- res_validation_wide |> 
+  #             select(-starts_with('undownscaled')) |>
+  #             pivot_longer(-time, names_to = 'model', values_to = 'vs')  |> 
+  #             mutate( date = ymd_hms(time) ) |> 
+  #             mutate(dd = as_date(date), hh = hour(date)) |> 
+  #             group_by(dd, model) |> 
+  #             mutate(mx = max(vs) ) |> 
+  #             ungroup() |> 
+  #             filter(vs == mx) |> 
+  #             select(model, dd, mx, hh)
+  
+  # pl.mx <- ggplot() +
+  #   geom_bar(data=filter(res.mx, model =='reanalysis'), 
+  #            mapping = aes(x=hh), fill='grey') +
+  #   geom_freqpoly(data= filter(res.mx, model !='reanalysis'),
+  #             mapping = aes(x=hh, color=model) ) +
+  #   scale_color_brewer(palette = 'Dark2') + 
+  #   theme_bw() 
+
+  pl.mx <- res_validation_wide |> 
+    select(-starts_with('undownscaled')) |> 
+    hour_max_plot()
+}
+```
+
+```{r}
+#pl.hourly_distribution <- hourly_distribution(res_validation_wide |> select(-starts_with('undownscaled')))
+if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {
+  pl.hourly_distribution <- res_validation_wide |> 
+    select(-starts_with('undownscaled')) |> hourly_distribution()
+} else { 
+  pl.hourly_distribution <-   pl.hourly_distribution <- res_validation_wide |> 
+    select(-starts_with('undownscaled')) |> week_distribution()
+}
+```
+
+```{r}
+if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {
+  pl.amplitude <- res_validation_wide |> 
+    select(-starts_with('undownscaled')) |> amplitude_plot()
+} else { 
+  pl.amplitude <- res_validation_wide |> 
+    select(-starts_with('undownscaled')) |> amplitude_monthly_plot()
+}
+
+
+#pl.amplitude <- amplitude_plot(res_validation_wide |> select(-starts_with('undownscaled')))
+```
+
+```{r}
+pl.acf <- res_validation_wide |> select(-starts_with('undownscaled')) |> acf_plot()
+```
+
+```{r}
+pl.ext <- res_validation_wide |> 
+  select(-starts_with('undownscaled')) |> extremogram_plot()
+```
+
+```{r, fig.height=11, fig.width=11}
+PP <- NULL
+if (conf[["VARIABLES"]][[params$variable]][["daily"]]) {
+  PP <- |> 
+} else {
+    PP <- (plqq | pl.ext | pl.acf) /
+      (pl.amplitude) /
+      (pl.hourly_distribution) + plot_layout(guides = 'collect')
+}
+PP
+```
